@@ -1,11 +1,18 @@
 #include <Keyboard.h>
 
-bool testMode = true;
+
+enum Mode {
+  GAMEPLAY,
+  CONTROLLED_TEST
+}
+// Gameplay is default mode
+Mode curMode = GAMEPLAY;
+
+String cmd = "";
+
 
 // Amount of time needed for reading to be accepted as stable
 const unsigned long debounceDelay = 20;
-// For easier testing
-int count = 0;
 
 // Stable debounced states
 int topLeft = HIGH;
@@ -14,7 +21,7 @@ int topRight = HIGH;
 int bottomLeft = HIGH;
 int bottomRight = HIGH;
 
-// Previous raw electrical readings
+// Previous raw readings
 int topLeftPrev = HIGH;
 int centerPrev = HIGH;
 int topRightPrev = HIGH;
@@ -36,12 +43,14 @@ void setup() {
   pinMode(5, INPUT_PULLUP);
   pinMode(6, INPUT_PULLUP);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   Keyboard.begin();
 }
 
 
 void loop() {
+
+  readSerialInput();
 
   handlePanel(2, 'w', topLeft, topLeftPrev, timerTL);
   handlePanel(3, 's', center, centerPrev, timerC);
@@ -67,28 +76,65 @@ void handlePanel (int pin, char key, int &stableState, int &prevReading, unsigne
     if (curReading != stableState) {
       stableState = curReading;
 
-      if (testMode) {
-
-        Serial.print("Pin ");
-        Serial.print(pin);
-        Serial.print(" changed to: ");
-        Serial.print(stableState == LOW ? "PRESSED" : "RELEASED");
-        Serial.print(" at ");
-        Serial.print(micros());
-        Serial.println(" us ");
-        Serial.println(count);
-
-        if (stableState == LOW) {count++;}
-
-      } else {
-
+      if (curMode == GAMEPLAY) {
         if (stableState == LOW) {
           Keyboard.press(key);
         } else {
           Keyboard.release(key);
         }
-
       }
+
+      else if (curMode == CONTROLLED_TEST) {
+        Serial.print("Pin ");
+        Serial.print(pin);
+        Serial.print(": ");
+
+        if (stableState == LOW) {
+          Serial.println("PRESSED");
+        }
+        else {
+          Serial.println("RELEASED");
+        }
+      }
+
+    }
+  }
+}
+
+void readSerialInput() {
+  while (Serial.available() > 0) {
+    char incoming = Serial.read();
+
+    // Command is complete on enter
+    if (incoming == '\n') {
+      cmd.trim();
+
+      cmd.toUpperCase();
+
+      if (cmd == "MODE CT") {
+        Keyboard.releaseAll();
+        curMode = CONTROLLED_TEST;
+        Serial.println();
+        Serial.println("CONTROLLED TEST MODE");
+        Serial.println();
+      }
+
+      else if (cmd == "MODE GAME") {
+        curMode = GAMEPLAY;
+        Serial.println();
+        Serial.println("GAMEPLAY MODE");
+        Serial.println();
+      }
+
+      else {
+        Serial.print("Unknown command: ");
+        Serial.println(cmd);
+      }
+
+    }
+
+    else if (incoming != '\r') {
+      cmd += incoming;
     }
   }
 }
