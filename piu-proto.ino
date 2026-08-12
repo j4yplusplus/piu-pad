@@ -4,7 +4,9 @@
 enum Mode {
   GAMEPLAY,
   CONTROLLED_TEST
-}
+};
+
+
 // Gameplay is default mode
 Mode curMode = GAMEPLAY;
 
