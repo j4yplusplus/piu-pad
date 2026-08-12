@@ -86,21 +86,42 @@ void handlePanel (int pin, char key, int &stableState, int &prevReading, unsigne
         }
       }
 
-      else if (curMode == CONTROLLED_TEST) {
-        Serial.print("Pin ");
-        Serial.print(pin);
-        Serial.print(": ");
-
-        if (stableState == LOW) {
-          Serial.println("PRESSED");
-        }
-        else {
-          Serial.println("RELEASED");
-        }
+      if (curMode == CONTROLLED_TEST) {
+        modeCT();
       }
-
     }
   }
+}
+
+void modeCT() {
+  Serial.println();
+  displayPad("RED", "LEFT", topLeft);
+  Serial.print("          ");
+  displayPad("RED", "RIGHT", topRight);
+  Serial.println();
+  Serial.println();
+  Serial.print("       ");
+  displayPad("YELLOW", "CENTER", center);
+  Serial.println();
+  Serial.println();
+  displayPad("BLUE", "LEFT", bottomLeft);
+  Serial.print("          ");
+  displayPad("BLUE", "RIGHT", bottomRight);
+  Serial.println();
+  Serial.println();
+  Serial.print("Hit pad to visualize key presses.");
+  Serial.println();
+  Serial.println();
+}
+
+void displayPad(String color, String position, int state) {
+  Serial.print("[");
+  if (state == LOW) {
+    Serial.print(color);
+    Serial.print(": ");
+    Serial.print(position);
+  }
+  Serial.print("] ");
 }
 
 void readSerialInput() {
@@ -119,6 +140,7 @@ void readSerialInput() {
         Serial.println();
         Serial.println("CONTROLLED TEST MODE");
         Serial.println();
+        modeCT();
       }
 
       else if (cmd == "MODE GAME") {
