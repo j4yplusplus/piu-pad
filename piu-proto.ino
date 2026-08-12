@@ -1,5 +1,15 @@
 #include <Keyboard.h>
 
+bool testMode = false;
+
+// Will be utilized if debouncing is needed. For now, redundant.
+int topLeft = HIGH;
+int center = HIGH;
+int topRight = HIGH;
+int bottomLeft = HIGH;
+int bottomRight = HIGH;
+
+// Prev states
 int topLeftPrev = HIGH;
 int centerPrev = HIGH;
 int topRightPrev = HIGH;
@@ -13,58 +23,44 @@ void setup() {
   pinMode(5, INPUT_PULLUP);
   pinMode(6, INPUT_PULLUP);
 
+  Serial.begin(9600);
   Keyboard.begin();
 }
 
 void loop() {
-  int topLeft = digitalRead(2);
-  int center = digitalRead(3);
-  int topRight = digitalRead(4);
-  int bottomLeft = digitalRead(5);
-  int bottomRight = digitalRead(6);
 
-  if (topLeft != topLeftPrev) {
-    if (topLeft == LOW) {
-      Keyboard.press('w');
-    } else {
-      Keyboard.release('w');
-    }
-    topLeftPrev = topLeft;
-  }
+  detectPress(2, 'w', topLeft, topLeftPrev);
+  detectPress(3, 's', center, centerPrev);
+  detectPress(4, 'd', topRight, topRightPrev);
+  detectPress(5, 'a', bottomLeft, bottomLeftPrev);
+  detectPress(6, 'x', bottomRight, bottomRightPrev);
+}
 
-  if (center != centerPrev) {
-    if (center == LOW) {
-      Keyboard.press('s');
-    } else {
-      Keyboard.release('s');
-    }
-    centerPrev = center;
-  }
+void detectPress (int pin, char key, int &state, int &statePrev) {
+  state = digitalRead(pin);
 
-  if (topRight != topRightPrev) {
-    if (topRight == LOW) {
-      Keyboard.press('d');
-    } else {
-      Keyboard.release('d');
-    }
-    topRightPrev = topRight;
-  }
+  if (state != statePrev) {
 
-  if (bottomLeft != bottomLeftPrev) {
-    if (bottomLeft == LOW) {
-      Keyboard.press('a');
-    } else {
-      Keyboard.release('a');
-    }
-    bottomLeftPrev = bottomLeft;
-  }
+    if (testMode == true) {
 
-  if (bottomRight != bottomRightPrev) {
-    if (bottomRight == LOW) {
-      Keyboard.press('x');
+      Serial.print("Pin ");
+      Serial.print(pin);
+      Serial.print(" changed to: ");
+      Serial.print(state == LOW ? "PRESSED" : "RELEASED");
+      Serial.print(" at ");
+      Serial.print(micros());
+      Serial.println(" us");
+
     } else {
-      Keyboard.release('x');
+
+      if (state == LOW) {
+        Keyboard.press(key);
+      } else {
+        Keyboard.release(key);
+      }
+
     }
-    bottomRightPrev = bottomRight;
+
+    statePrev = state;
   }
 }
