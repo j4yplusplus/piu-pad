@@ -19,6 +19,10 @@ String cmd = "";
 // Amount of time needed for reading to be accepted as stable
 const unsigned long debounceDelay = 20;
 
+bool awaitingCalibration = false;
+bool calibrationActive = false;
+int calibrationTgt = 10;
+
 
 
 // ==========================================
@@ -31,13 +35,14 @@ struct Panel {
   int stableState;
   int prevReading;
   unsigned long debounceTimer;
+  int calibrationCount;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0};
-Panel center = {3, 's', HIGH, HIGH, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0};
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0};
 
 
 
@@ -98,7 +103,13 @@ void handlePanel (Panel &panel) {
       }
 
       if (curMode == CONTROLLED_TEST) {
-        modeCT();
+
+        if (!calibrationActive) {
+          modeCT();
+        } 
+        else if (panel.stableState == LOW) {
+          recordCalibration(panel);
+        }
       }
     }
   }
@@ -110,6 +121,7 @@ void handlePanel (Panel &panel) {
 // ==========================================
 
 void modeCT() {
+  Serial.println();
   Serial.println();
   displayPad("RED", "LEFT", topLeft);
   Serial.print("          ");
@@ -125,8 +137,8 @@ void modeCT() {
   displayPad("BLUE", "RIGHT", bottomRight);
   Serial.println();
   Serial.println();
-  Serial.print("Hit pad to visualize key presses.");
-  Serial.println();
+  Serial.print("Hit pad to visualize key presses, ");
+  Serial.print("or continue to calibration (y)");
   Serial.println();
 }
 
@@ -138,6 +150,29 @@ void displayPad(String color, String position, Panel &panel) {
     Serial.print(position);
   }
   Serial.print("] ");
+}
+
+void startCalibration() {
+  Serial.println();
+  Serial.println("Starting calibration...");
+  Serial.println("Hit each pad " + String(calibrationTgt) + " times.");
+  Serial.println();
+
+  topLeft.calibrationCount = 0;
+  center.calibrationCount = 0;
+  topRight.calibrationCount = 0;
+  bottomLeft.calibrationCount = 0;
+  bottomRight.calibrationCount = 0;
+
+  calibrationActive = true;
+  awaitingCalibration = false;
+
+  //Call show calibration panel after
+}
+
+void recordCalibration(Panel) {
+  // TODO
+  // Call show calibration panel after
 }
 
 
@@ -159,6 +194,8 @@ void readSerialInput() {
       if (cmd == "MODE CT") {
         Keyboard.releaseAll();
         curMode = CONTROLLED_TEST;
+        calibrationActive = false;
+        awaitingCalibration = true;
         Serial.println();
         Serial.println("CONTROLLED TEST MODE");
         Serial.println();
@@ -169,6 +206,9 @@ void readSerialInput() {
         Serial.println();
         Serial.println("GAMEPLAY MODE");
         Serial.println();
+      }
+      else if (cmd == "Y" && awaitingCalibration) {
+        startCalibration();
       }
       else {
         Serial.print("Unknown command: ");
