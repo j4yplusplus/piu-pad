@@ -49,19 +49,23 @@ struct Panel {
   // Press bounce stats
   unsigned long pressTotal;
   unsigned long pressMax;
+  int tempPressChanges;
 
   // Release bounce stats
   unsigned long releaseTotal;
   unsigned long releaseMax;
+  int tempReleaseChanges;
+
+  int tempChanges;
 
   int glitchEvents;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
 
 
 
@@ -108,10 +112,12 @@ void handlePanel (Panel &panel) {
       if (!panel.activeTest) {
         panel.activeTest = true;
         panel.bounceStart = curTime;
+        panel.tempChanges = 0;
       }
       panel.lastBounce = curTime;
+      // Record number of bounces
+      panel.tempChanges++;
     }
-
     panel.debounceTimer = millis();
     panel.prevReading = curReading;
   }
@@ -136,7 +142,6 @@ void handlePanel (Panel &panel) {
           visualizePanels();
         } 
         else if (calibrationActive) {
-
           if (panel.activeTest) {
             recordBounce(panel);
             panel.activeTest = false;
@@ -221,10 +226,13 @@ void resetPanel(Panel &panel) {
 
   panel.pressTotal = 0;
   panel.pressMax = 0;
+  panel.tempPressChanges = 0;
 
   panel.releaseTotal = 0;
   panel.releaseMax = 0;
+  panel.tempReleaseChanges = 0;
 
+  panel.tempChanges = 0;
   panel.glitchEvents = 0;
 }
 
@@ -279,7 +287,17 @@ void checkCalibration() {
     Serial.println();
     Serial.println("Calibration presses complete.");
     Serial.println();
-    // TODO showResults(); !!!!!
+
+    Serial.println("TOP LEFT:");
+    showResults(topLeft);
+    Serial.println("TOP RIGHT:");
+    showResults(topRight);
+    Serial.println("CENTER:");
+    showResults(center);
+    Serial.println("BOTTOM LEFT:");
+    showResults(bottomLeft);
+    Serial.println("BOTTOM RIGHT:");
+    showResults(bottomRight);
     Serial.print("Continue to Gameplay Mode? (y)");
   }
 }
@@ -296,6 +314,7 @@ void recordBounce(Panel &panel) {
     if (bounceDuration > panel.pressMax) {
       panel.pressMax = bounceDuration;
     }
+    panel.tempPressChanges += panel.tempChanges;
   }
   else {
     if (panel.finishedTest) {
@@ -308,9 +327,59 @@ void recordBounce(Panel &panel) {
     if (panel.calibrationCount == calibrationTgt) {
       panel.finishedTest = true;
     } 
+    panel.tempReleaseChanges += panel.tempChanges;
   }
 }
 
+void showResults(Panel &panel) {
+  float avgPressBounce =
+    (float)panel.pressTotal / panel.calibrationCount / 1000.0;
+
+  float avgReleaseBounce =
+    (float)panel.releaseTotal / panel.calibrationCount / 1000.0;
+  
+  float avgPressBounces =
+    (float)panel.tempPressChanges / panel.calibrationCount;
+  
+  float avgReleaseBounces =
+    (float)panel.tempReleaseChanges / panel.calibrationCount;
+
+  // Press results
+  Serial.println();
+  Serial.println("Press:");
+
+  Serial.print("  Avg bounce: ");
+  Serial.print(avgPressBounce, 1);
+  Serial.println(" ms");
+
+  Serial.print("  Max bounce: ");
+  Serial.print(panel.pressMax / 1000.0, 1);
+  Serial.println(" ms");
+
+  Serial.print("  Avg raw state transitions: ");
+  Serial.println(avgPressBounces, 1);
+
+  // Release results
+  Serial.println();
+  Serial.println("Release:");
+
+  Serial.print("  Avg bounce: ");
+  Serial.print(avgReleaseBounce, 1);
+  Serial.println(" ms");
+
+  Serial.print("  Max bounce: ");
+  Serial.print(panel.releaseMax / 1000.0, 1);
+  Serial.println(" ms");
+
+  Serial.print("  Avg raw state transitions: ");
+  Serial.println(avgReleaseBounces, 1);
+
+  Serial.println();
+  Serial.print("Number of Glitch Events: ");
+  Serial.println(panel.glitchEvents);
+
+  Serial.println();
+}
 
 
 // ==========================================
@@ -348,9 +417,19 @@ void readSerialInput() {
         Serial.println();
       }
       else if (cmd == "Y" && awaitingCalibration) {
-        calibrationActive = true;
-        awaitingCalibration = false;
-        startCalibration();
+        if(topLeft.stableState == HIGH &&
+          topRight.stableState == HIGH &&
+          center.stableState == HIGH &&
+          bottomLeft.stableState == HIGH &&
+          bottomRight.stableState == HIGH) {
+
+          calibrationActive = true;
+          awaitingCalibration = false;
+          startCalibration();
+        } else {
+          Serial.println("Release all panels before starting calibration.");
+          return;
+        }
       }
       else if (cmd == "Y" && awaitingGameplay) {
         awaitingGameplay = false;
