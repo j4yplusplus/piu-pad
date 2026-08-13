@@ -8,7 +8,7 @@
 
 enum Mode {
   GAMEPLAY,
-  CONTROLLED_TEST
+  TEST
 };
 
 // Gameplay is default mode
@@ -20,6 +20,7 @@ String cmd = "";
 const unsigned long debounceDelay = 20;
 
 bool awaitingCalibration = false;
+bool awaitingGameplay = false;
 bool calibrationActive = false;
 int calibrationTgt = 10;
 
@@ -35,14 +36,28 @@ struct Panel {
   int stableState;
   int prevReading;
   unsigned long debounceTimer;
+
   int calibrationCount;
+  bool activeTest;
+
+  // Raw bounce measurment
+  unsigned long bounceStart;
+  unsigned long lastBounce;
+
+  // Press bounce stats
+  unsigned long pressTotal;
+  unsigned long pressMax;
+
+  // Release bounce stats
+  unsigned long releaseTotal;
+  unsigned long releaseMax;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0};
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
 
 
 
@@ -83,6 +98,16 @@ void handlePanel (Panel &panel) {
 
   // If the current raw electrical reading is different from the previous raw reading
   if (curReading != panel.prevReading) {
+
+    if (calibrationActive) {
+      unsigned long curTime = micros();
+      if (!panel.activeTest) {
+        panel.activeTest = true;
+        panel.bounceStart = curTime;
+      }
+      panel.lastBounce = curTime;
+    }
+
     panel.debounceTimer = millis();
     panel.prevReading = curReading;
   }
@@ -102,12 +127,22 @@ void handlePanel (Panel &panel) {
         }
       }
 
-      if (curMode == CONTROLLED_TEST) {
-        if (!calibrationActive) {
-          modeCT();
+      if (curMode == TEST) {
+        if (awaitingCalibration) {
+          visualizePanels();
         } 
-        else if (panel.stableState == LOW) {
-          recordCalibration(panel);
+        else if (calibrationActive) {
+
+          if (panel.activeTest) {
+            recordBounce(panel);
+            panel.activeTest = false;
+          }
+          if (panel.stableState == LOW) {
+            recordCalibration(panel);
+          }
+          else if (panel.stableState == HIGH) {
+            checkCalibration();
+          }
         }
       }
     }
@@ -115,11 +150,12 @@ void handlePanel (Panel &panel) {
 }
 
 
+
 // ==========================================
-// Controlled Test Mode Functions
+// Test Mode Functions
 // ==========================================
 
-void modeCT() {
+void visualizePanels() {
   Serial.println();
   Serial.println();
   displayPad("RED", "LEFT", topLeft);
@@ -157,59 +193,105 @@ void startCalibration() {
   Serial.println("Hit each pad " + String(calibrationTgt) + " times.");
   Serial.println();
 
-  topLeft.calibrationCount = 0;
-  center.calibrationCount = 0;
-  topRight.calibrationCount = 0;
-  bottomLeft.calibrationCount = 0;
-  bottomRight.calibrationCount = 0;
+  resetPanel(topLeft);
+  resetPanel(center);
+  resetPanel(topRight);
+  resetPanel(bottomLeft);
+  resetPanel(bottomRight);
 
   showCalibration();
 }
 
+void resetPanel(Panel &panel) {
+  panel.calibrationCount = 0; 
+  panel.activeTest = false;
+
+  panel.bounceStart = 0;
+  panel.lastBounce = 0;
+
+  panel.pressTotal = 0;
+  panel.pressMax = 0;
+
+  panel.releaseTotal = 0;
+  panel.releaseMax = 0;
+}
+
 void recordCalibration(Panel &panel) {
-  if (panel.calibrationCount >= 10) {
+  if (panel.calibrationCount >= calibrationTgt) {
     return;
   }
 
   panel.calibrationCount++;
   showCalibration();
-  if ( topLeft.calibrationCount == calibrationTgt &&
-    topRight.calibrationCount == calibrationTgt &&
-    center.calibrationCount == calibrationTgt &&
-    bottomLeft.calibrationCount == calibrationTgt &&
-    bottomRight.calibrationCount == calibrationTgt) {
-
-    Serial.println();
-    Serial.println("Calibration presses complete.");
-    Serial.println();
-    // showResults();
-    Serial.print("Continue to Gameplay Mode? (y)");
-
-  }
 }
 
 void showCalibration() {
   Serial.print("Top Left: ");
   Serial.print(topLeft.calibrationCount);
-  Serial.println("/10");
-
+  Serial.print("/");
+  Serial.println(calibrationTgt);
+  
   Serial.print("Top Right: ");
   Serial.print(topRight.calibrationCount);
-  Serial.println("/10");
-
+  Serial.print("/");
+  Serial.println(calibrationTgt);
+  
   Serial.print("Center: ");
   Serial.print(center.calibrationCount);
-  Serial.println("/10");
+  Serial.print("/");
+  Serial.println(calibrationTgt);
 
   Serial.print("Bottom Left: ");
   Serial.print(bottomLeft.calibrationCount);
-  Serial.println("/10");
+  Serial.print("/");
+  Serial.println(calibrationTgt);
 
   Serial.print("Bottom Right: ");
   Serial.print(bottomRight.calibrationCount);
-  Serial.println("/10");
+  Serial.print("/");
+  Serial.println(calibrationTgt);
 
   Serial.println();
+}
+
+void checkCalibration() {
+    if ( topLeft.calibrationCount == calibrationTgt &&
+    topRight.calibrationCount == calibrationTgt &&
+    center.calibrationCount == calibrationTgt &&
+    bottomLeft.calibrationCount == calibrationTgt &&
+    bottomRight.calibrationCount == calibrationTgt) {
+
+    calibrationActive = false;
+    awaitingGameplay = true;
+
+    Serial.println();
+    Serial.println("Calibration presses complete.");
+    Serial.println();
+    // TODO showResults(); !!!!!
+    Serial.print("Continue to Gameplay Mode? (y)");
+  }
+}
+
+void recordBounce(Panel &panel) {
+
+  unsigned long bounceDuration = panel.lastBounce - panel.bounceStart;
+
+  if (panel.stableState == LOW) {
+    if (panel.calibrationCount >= calibrationTgt) {
+      return;
+    }
+
+    panel.pressTotal += bounceDuration;
+    if (bounceDuration > panel.pressMax) {
+      panel.pressMax = bounceDuration;
+    }
+  }
+  else {
+    panel.releaseTotal += bounceDuration;
+    if (bounceDuration > panel.releaseMax) {
+      panel.releaseMax = bounceDuration;
+    }    
+  }
 }
 
 
@@ -228,18 +310,22 @@ void readSerialInput() {
 
       cmd.toUpperCase();
 
-      if (cmd == "MODE CT") {
+      if (cmd == "MODE TEST") {
         Keyboard.releaseAll();
-        curMode = CONTROLLED_TEST;
+        curMode = TEST;
         calibrationActive = false;
         awaitingCalibration = true;
+        awaitingGameplay = false;
         Serial.println();
-        Serial.println("CONTROLLED TEST MODE");
+        Serial.println("TEST MODE");
         Serial.println();
-        modeCT();
+        visualizePanels();
       }
       else if (cmd == "MODE GAME") {
         curMode = GAMEPLAY;
+        calibrationActive = false;
+        awaitingCalibration = false;
+        awaitingGameplay = false;        
         Serial.println();
         Serial.println("GAMEPLAY MODE");
         Serial.println();
@@ -249,8 +335,8 @@ void readSerialInput() {
         awaitingCalibration = false;
         startCalibration();
       }
-      else if (cmd == "Y" && calibrationActive) {
-        calibrationActive = false;
+      else if (cmd == "Y" && awaitingGameplay) {
+        awaitingGameplay = false;
         curMode = GAMEPLAY;
       }
       else {
