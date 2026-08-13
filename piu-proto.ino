@@ -173,7 +173,7 @@ void visualizePanels() {
   Serial.println();
   Serial.println();
   Serial.print("Hit pad to visualize key presses, ");
-  Serial.print("or continue to calibration (y)");
+  Serial.print("or release all pads before continuing to calibration (y)");
   Serial.println();
 }
 
@@ -217,7 +217,7 @@ void resetPanel(Panel &panel) {
 }
 
 void recordCalibration(Panel &panel) {
-  if (panel.calibrationCount >= calibrationTgt) {
+  if (panel.calibrationCount == calibrationTgt) {
     return;
   }
 
@@ -277,7 +277,7 @@ void recordBounce(Panel &panel) {
   unsigned long bounceDuration = panel.lastBounce - panel.bounceStart;
 
   if (panel.stableState == LOW) {
-    if (panel.calibrationCount >= calibrationTgt) {
+    if (panel.calibrationCount == calibrationTgt) {
       return;
     }
 
@@ -287,6 +287,7 @@ void recordBounce(Panel &panel) {
     }
   }
   else {
+    //TODO Fix this!
     panel.releaseTotal += bounceDuration;
     if (bounceDuration > panel.releaseMax) {
       panel.releaseMax = bounceDuration;
@@ -338,6 +339,9 @@ void readSerialInput() {
       else if (cmd == "Y" && awaitingGameplay) {
         awaitingGameplay = false;
         curMode = GAMEPLAY;
+        Serial.println();
+        Serial.println("GAMEPLAY MODE");
+        Serial.println();
       }
       else {
         Serial.print("Unknown command: ");
