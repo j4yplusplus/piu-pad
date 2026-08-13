@@ -38,7 +38,9 @@ struct Panel {
   unsigned long debounceTimer;
 
   int calibrationCount;
+
   bool activeTest;
+  bool finishedTest;
 
   // Raw bounce measurment
   unsigned long bounceStart;
@@ -51,13 +53,15 @@ struct Panel {
   // Release bounce stats
   unsigned long releaseTotal;
   unsigned long releaseMax;
+
+  int glitchEvents;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0};
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0};
 
 
 
@@ -146,6 +150,11 @@ void handlePanel (Panel &panel) {
         }
       }
     }
+    else if (panel.activeTest) {
+      // Raw glitch returned to original stable state
+      panel.activeTest = false;
+      panel.glitchEvents++;
+    }
   }
 }
 
@@ -205,6 +214,7 @@ void startCalibration() {
 void resetPanel(Panel &panel) {
   panel.calibrationCount = 0; 
   panel.activeTest = false;
+  panel.finishedTest = false;
 
   panel.bounceStart = 0;
   panel.lastBounce = 0;
@@ -214,6 +224,8 @@ void resetPanel(Panel &panel) {
 
   panel.releaseTotal = 0;
   panel.releaseMax = 0;
+
+  panel.glitchEvents = 0;
 }
 
 void recordCalibration(Panel &panel) {
@@ -255,11 +267,11 @@ void showCalibration() {
 }
 
 void checkCalibration() {
-    if ( topLeft.calibrationCount == calibrationTgt &&
-    topRight.calibrationCount == calibrationTgt &&
-    center.calibrationCount == calibrationTgt &&
-    bottomLeft.calibrationCount == calibrationTgt &&
-    bottomRight.calibrationCount == calibrationTgt) {
+    if (topLeft.finishedTest &&
+    topRight.finishedTest &&
+    center.finishedTest &&
+    bottomLeft.finishedTest &&
+    bottomRight.finishedTest) {
 
     calibrationActive = false;
     awaitingGameplay = true;
@@ -280,18 +292,22 @@ void recordBounce(Panel &panel) {
     if (panel.calibrationCount == calibrationTgt) {
       return;
     }
-
     panel.pressTotal += bounceDuration;
     if (bounceDuration > panel.pressMax) {
       panel.pressMax = bounceDuration;
     }
   }
   else {
-    //TODO Fix this!
+    if (panel.finishedTest) {
+      return;
+    }
     panel.releaseTotal += bounceDuration;
     if (bounceDuration > panel.releaseMax) {
       panel.releaseMax = bounceDuration;
-    }    
+    }
+    if (panel.calibrationCount == calibrationTgt) {
+      panel.finishedTest = true;
+    } 
   }
 }
 
