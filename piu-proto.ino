@@ -103,7 +103,6 @@ void handlePanel (Panel &panel) {
       }
 
       if (curMode == CONTROLLED_TEST) {
-
         if (!calibrationActive) {
           modeCT();
         } 
@@ -164,15 +163,53 @@ void startCalibration() {
   bottomLeft.calibrationCount = 0;
   bottomRight.calibrationCount = 0;
 
-  calibrationActive = true;
-  awaitingCalibration = false;
-
-  //Call show calibration panel after
+  showCalibration();
 }
 
-void recordCalibration(Panel) {
-  // TODO
-  // Call show calibration panel after
+void recordCalibration(Panel &panel) {
+  if (panel.calibrationCount >= 10) {
+    return;
+  }
+
+  panel.calibrationCount++;
+  showCalibration();
+  if ( topLeft.calibrationCount == calibrationTgt &&
+    topRight.calibrationCount == calibrationTgt &&
+    center.calibrationCount == calibrationTgt &&
+    bottomLeft.calibrationCount == calibrationTgt &&
+    bottomRight.calibrationCount == calibrationTgt) {
+
+    Serial.println();
+    Serial.println("Calibration presses complete.");
+    Serial.println();
+    // showResults();
+    Serial.print("Continue to Gameplay Mode? (y)");
+
+  }
+}
+
+void showCalibration() {
+  Serial.print("Top Left: ");
+  Serial.print(topLeft.calibrationCount);
+  Serial.println("/10");
+
+  Serial.print("Top Right: ");
+  Serial.print(topRight.calibrationCount);
+  Serial.println("/10");
+
+  Serial.print("Center: ");
+  Serial.print(center.calibrationCount);
+  Serial.println("/10");
+
+  Serial.print("Bottom Left: ");
+  Serial.print(bottomLeft.calibrationCount);
+  Serial.println("/10");
+
+  Serial.print("Bottom Right: ");
+  Serial.print(bottomRight.calibrationCount);
+  Serial.println("/10");
+
+  Serial.println();
 }
 
 
@@ -208,7 +245,13 @@ void readSerialInput() {
         Serial.println();
       }
       else if (cmd == "Y" && awaitingCalibration) {
+        calibrationActive = true;
+        awaitingCalibration = false;
         startCalibration();
+      }
+      else if (cmd == "Y" && calibrationActive) {
+        calibrationActive = false;
+        curMode = GAMEPLAY;
       }
       else {
         Serial.print("Unknown command: ");
