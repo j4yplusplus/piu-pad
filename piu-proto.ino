@@ -58,14 +58,19 @@ struct Panel {
 
   int tempChanges;
 
-  int glitchEvents;
+  unsigned long tempQuiet;
+  unsigned long pressQuiet;
+  unsigned long releaseQuiet;
+
+  int pressGlitches;
+  int releaseGlitches;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0};
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 
 
@@ -113,9 +118,16 @@ void handlePanel (Panel &panel) {
         panel.activeTest = true;
         panel.bounceStart = curTime;
         panel.tempChanges = 0;
+        panel.tempQuiet = 0;
       }
-      panel.lastBounce = curTime;
+      else {
+        unsigned long quietTime = curTime - panel.lastBounce;
+        if (quietTime > panel.tempQuiet) {
+          panel.tempQuiet = quietTime;
+        }
+      }
       // Record number of bounces
+      panel.lastBounce = curTime;
       panel.tempChanges++;
     }
     panel.debounceTimer = millis();
@@ -158,7 +170,14 @@ void handlePanel (Panel &panel) {
     else if (panel.activeTest) {
       // Raw glitch returned to original stable state
       panel.activeTest = false;
-      panel.glitchEvents++;
+      if (panel.stableState == LOW) {
+        // Looked like a release, stayed at a press
+        panel.pressGlitches++;
+      }
+      else {
+        // Looked like a press, stayed at release
+        panel.releaseGlitches++;
+      }
     }
   }
 }
@@ -233,9 +252,15 @@ void resetPanel(Panel &panel) {
   panel.tempReleaseChanges = 0;
 
   panel.tempChanges = 0;
-  panel.glitchEvents = 0;
+  panel.pressGlitches = 0;
+  panel.releaseGlitches = 0;
+
+  panel.tempQuiet = 0;
+  panel.pressQuiet = 0;
+  panel.releaseQuiet= 0;
 }
 
+// TODO: Fix this later
 void recordCalibration(Panel &panel) {
   if (panel.calibrationCount == calibrationTgt) {
     return;
@@ -315,6 +340,9 @@ void recordBounce(Panel &panel) {
       panel.pressMax = bounceDuration;
     }
     panel.tempPressChanges += panel.tempChanges;
+    if (panel.tempQuiet > panel.pressQuiet) {
+      panel.pressQuiet = panel.tempQuiet;
+    }
   }
   else {
     if (panel.finishedTest) {
@@ -328,6 +356,9 @@ void recordBounce(Panel &panel) {
       panel.finishedTest = true;
     } 
     panel.tempReleaseChanges += panel.tempChanges;
+    if (panel.tempQuiet > panel.releaseQuiet) {
+      panel.releaseQuiet = panel.tempQuiet;
+    }
   }
 }
 
@@ -356,6 +387,10 @@ void showResults(Panel &panel) {
   Serial.print(panel.pressMax / 1000.0, 1);
   Serial.println(" ms");
 
+  Serial.print("  Longest quiet period: ");
+  Serial.print(panel.pressQuiet / 1000.0, 1);
+  Serial.println(" ms");
+
   Serial.print("  Avg raw state transitions: ");
   Serial.println(avgPressBounces, 1);
 
@@ -371,12 +406,18 @@ void showResults(Panel &panel) {
   Serial.print(panel.releaseMax / 1000.0, 1);
   Serial.println(" ms");
 
+  Serial.print("  Longest quiet period: ");
+  Serial.print(panel.releaseQuiet / 1000.0, 1);
+  Serial.println(" ms");
+
   Serial.print("  Avg raw state transitions: ");
   Serial.println(avgReleaseBounces, 1);
 
   Serial.println();
-  Serial.print("Number of Glitch Events: ");
-  Serial.println(panel.glitchEvents);
+  Serial.print("Number of Rejected Releases: ");
+  Serial.println(panel.pressGlitches);
+  Serial.print("Number of Rejected Presses: ");
+  Serial.println(panel.releaseGlitches);
 
   Serial.println();
 }
@@ -428,7 +469,6 @@ void readSerialInput() {
           startCalibration();
         } else {
           Serial.println("Release all panels before starting calibration.");
-          return;
         }
       }
       else if (cmd == "Y" && awaitingGameplay) {
