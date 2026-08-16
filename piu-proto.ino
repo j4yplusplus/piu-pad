@@ -4,19 +4,13 @@
 String cmd = "";
 
 enum Mode {GAMEPLAY, TEST};
-// Default mode
+enum TestStage {VISUALIZATION, CALIBRATION, RESULTS};
+// Default mode and test stage
 Mode curMode = GAMEPLAY;
+TestStage curStage = VISUALIZATION;
 
 // Amount of time needed for reading to be accepted as stable
 const unsigned long debounceDelay = 20;
-
-// Test stages: Either visualization, calibration, or results
-// When true, visualization stage
-bool awaitingCalibration = false;
-// When true, calibration stage
-bool calibrationActive = false;
-// When true, results stage. Automatically triggered when calibration is finished.
-bool awaitingGameplay = false;
 
 // Amount of samples needed per panel for calibration
 int calibrationTgt = 10;
@@ -26,59 +20,55 @@ int calibrationTgt = 10;
 // Panels
 // ==========================================
 
+struct Stats {
+  unsigned long bounceSum = 0;
+  unsigned long longestBounce = 0;
+  int totalChanges = 0;
+  unsigned long longestSilence = 0;
+  int rejectedChanges = 0;
+};
+
 struct Panel {
+  String name;
   int pin;
   char key;
 
   // Current accepted state (LOW/HIGH)
-  int stableState;
+  int stableState = HIGH;
   // Previous raw electrical reading
-  int prevReading;
+  int prevReading = HIGH;
   // Measuring time for debounce delay
-  unsigned long debounceTimer;
+  unsigned long debounceTimer = 0;
 
   // Current amount of samples collected for calibration
-  int calibrationCount;
+  int calibrationCount = 0;
 
   // This is true from when the panel is pressed to when it's released as long 
   // as calibrationCount < calibrationTgt
-  bool activeTest;
+  bool activeTest = false;
 
   // First bounce before stable reading
-  unsigned long bounceStart;
+  unsigned long bounceStart = 0;
   // Latest bounce
-  unsigned long lastBounce;
-
-  // Press bounce stats
-  unsigned long pressTotal;
-  unsigned long pressMax;
-  int tempPressChanges;
-  int pressGlitches;
-
-  // Release bounce stats
-  unsigned long releaseTotal;
-  unsigned long releaseMax;
-  int tempReleaseChanges;
-  unsigned long releaseQuiet;
-  int releaseGlitches;
-  unsigned long pressQuiet;
+  unsigned long lastBounce = 0;
 
   // Number of state changes before stable
-  int tempChanges;
+  int tempChanges = 0;
   // Current max quiet period between temporary state changes
-  unsigned long tempQuiet;
+  unsigned long tempQuiet = 0;
+
+  Stats pressStats;
+  Stats releaseStats;
+
+  Panel(String n, int p, char k) : name(n), pin(p), key(k) {}
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0, 
-  0, 0, 0, 0, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0, 
-  0, 0, 0, 0, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 
-  0, 0, 0, 0, 0, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 
-  0, 0, 0, 0, 0, 0, 0};
+
+Panel topLeft = {"TOP LEFT", 2, 'w'};
+Panel center = {"CENTER", 3, 's'};
+Panel topRight = {"TOP RIGHT", 4, 'd'};
+Panel bottomLeft = {"BOTTOM LEFT", 5, 'a'};
+Panel bottomRight = {"BOTTOM RIGHT", 6, 'x'};
 
 
 // ==========================================
@@ -118,7 +108,7 @@ void handlePanel (Panel &panel) {
   // If the current raw reading is different from the previous raw reading
   if (curReading != panel.prevReading) {
 
-    if (calibrationActive && panel.calibrationCount < calibrationTgt) {
+    if (curStage == CALIBRATION && panel.calibrationCount < calibrationTgt) {
       // Record time to asign to either first or last bounce
       unsigned long curTime = micros();
       // If test is not yet active, this is the first bounce.
@@ -160,10 +150,10 @@ void handlePanel (Panel &panel) {
       }
       // Handle state change for testing (visualization or calibration)
       if (curMode == TEST) {
-        if (awaitingCalibration) {
+        if (curStage == VISUALIZATION) {
           visualizePanels();
         } 
-        else if (calibrationActive && panel.calibrationCount < calibrationTgt) {
+        else if (curStage == CALIBRATION && panel.calibrationCount < calibrationTgt) {
           // Reading is now stable, so test can be ended and results recorded
           if (panel.activeTest) {
             recordBounce(panel);
@@ -183,11 +173,11 @@ void handlePanel (Panel &panel) {
       panel.activeTest = false;
       if (panel.stableState == LOW) {
         // Looked like a release, stayed at a press
-        panel.pressGlitches++;
+        panel.pressStats.rejectedChanges++;
       }
       else {
         // Looked like a press, stayed at release
-        panel.releaseGlitches++;
+        panel.releaseStats.rejectedChanges++;
       }
     }
   }
@@ -252,22 +242,11 @@ void resetPanel(Panel &panel) {
 
   panel.bounceStart = 0;
   panel.lastBounce = 0;
-
-  panel.pressTotal = 0;
-  panel.pressMax = 0;
-  panel.tempPressChanges = 0;
-
-  panel.releaseTotal = 0;
-  panel.releaseMax = 0;
-  panel.tempReleaseChanges = 0;
-
   panel.tempChanges = 0;
-  panel.pressGlitches = 0;
-  panel.releaseGlitches = 0;
-
   panel.tempQuiet = 0;
-  panel.pressQuiet = 0;
-  panel.releaseQuiet= 0;
+
+  panel.pressStats = Stats();
+  panel.releaseStats = Stats();
 }
 
 // TODO: Fix this later
@@ -312,8 +291,7 @@ void checkCalibration() {
     bottomLeft.calibrationCount == calibrationTgt &&
     bottomRight.calibrationCount == calibrationTgt) {
 
-    calibrationActive = false;
-    awaitingGameplay = true;
+    curStage = RESULTS;
 
     Serial.println();
     Serial.println("Calibration presses complete.");
@@ -338,39 +316,39 @@ void recordBounce(Panel &panel) {
   unsigned long bounceDuration = panel.lastBounce - panel.bounceStart;
 
   if (panel.stableState == LOW) {
-    panel.pressTotal += bounceDuration;
-    if (bounceDuration > panel.pressMax) {
-      panel.pressMax = bounceDuration;
+    panel.pressStats.bounceSum += bounceDuration;
+    if (bounceDuration > panel.pressStats.longestBounce) {
+      panel.pressStats.longestBounce = bounceDuration;
     }
-    panel.tempPressChanges += panel.tempChanges;
-    if (panel.tempQuiet > panel.pressQuiet) {
-      panel.pressQuiet = panel.tempQuiet;
+    panel.pressStats.totalChanges += panel.tempChanges;
+    if (panel.tempQuiet > panel.pressStats.longestSilence) {
+      panel.pressStats.longestSilence = panel.tempQuiet;
     }
   }
   else {
-    panel.releaseTotal += bounceDuration;
-    if (bounceDuration > panel.releaseMax) {
-      panel.releaseMax = bounceDuration;
+    panel.releaseStats.bounceSum += bounceDuration;
+    if (bounceDuration > panel.releaseStats.longestBounce) {
+      panel.releaseStats.longestBounce = bounceDuration;
     }
-    panel.tempReleaseChanges += panel.tempChanges;
-    if (panel.tempQuiet > panel.releaseQuiet) {
-      panel.releaseQuiet = panel.tempQuiet;
+    panel.releaseStats.totalChanges += panel.tempChanges;
+    if (panel.tempQuiet > panel.releaseStats.longestSilence) {
+      panel.releaseStats.longestSilence = panel.tempQuiet;
     }
   }
 }
 
 void showResults(Panel &panel) {
   float avgPressBounce =
-    (float)panel.pressTotal / panel.calibrationCount / 1000.0;
+    (float)panel.pressStats.bounceSum / panel.calibrationCount / 1000.0;
 
   float avgReleaseBounce =
-    (float)panel.releaseTotal / panel.calibrationCount / 1000.0;
+    (float)panel.releaseStats.bounceSum / panel.calibrationCount / 1000.0;
   
   float avgPressBounces =
-    (float)panel.tempPressChanges / panel.calibrationCount;
+    (float)panel.pressStats.totalChanges / panel.calibrationCount;
   
   float avgReleaseBounces =
-    (float)panel.tempReleaseChanges / panel.calibrationCount;
+    (float)panel.releaseStats.totalChanges / panel.calibrationCount;
 
   // Press results
   Serial.println();
@@ -381,11 +359,11 @@ void showResults(Panel &panel) {
   Serial.println(" ms");
 
   Serial.print("  Max bounce: ");
-  Serial.print(panel.pressMax / 1000.0, 1);
+  Serial.print(panel.pressStats.longestBounce / 1000.0, 1);
   Serial.println(" ms");
 
   Serial.print("  Longest quiet period: ");
-  Serial.print(panel.pressQuiet / 1000.0, 1);
+  Serial.print(panel.pressStats.longestSilence / 1000.0, 1);
   Serial.println(" ms");
 
   Serial.print("  Avg raw state transitions: ");
@@ -400,11 +378,11 @@ void showResults(Panel &panel) {
   Serial.println(" ms");
 
   Serial.print("  Max bounce: ");
-  Serial.print(panel.releaseMax / 1000.0, 1);
+  Serial.print(panel.releaseStats.longestBounce / 1000.0, 1);
   Serial.println(" ms");
 
   Serial.print("  Longest quiet period: ");
-  Serial.print(panel.releaseQuiet / 1000.0, 1);
+  Serial.print(panel.releaseStats.longestSilence / 1000.0, 1);
   Serial.println(" ms");
 
   Serial.print("  Avg raw state transitions: ");
@@ -412,9 +390,9 @@ void showResults(Panel &panel) {
 
   Serial.println();
   Serial.print("Number of Rejected Releases: ");
-  Serial.println(panel.pressGlitches);
+  Serial.println(panel.pressStats.rejectedChanges);
   Serial.print("Number of Rejected Presses: ");
-  Serial.println(panel.releaseGlitches);
+  Serial.println(panel.releaseStats.rejectedChanges);
 
   Serial.println();
 }
@@ -437,9 +415,7 @@ void readSerialInput() {
       if (cmd == "MODE TEST") {
         Keyboard.releaseAll();
         curMode = TEST;
-        calibrationActive = false;
-        awaitingCalibration = true;
-        awaitingGameplay = false;
+        curStage = VISUALIZATION;
         Serial.println();
         Serial.println("TEST MODE");
         Serial.println();
@@ -447,30 +423,27 @@ void readSerialInput() {
       }
       else if (cmd == "MODE GAME") {
         curMode = GAMEPLAY;
-        calibrationActive = false;
-        awaitingCalibration = false;
-        awaitingGameplay = false;        
+        curStage = VISUALIZATION;       
         Serial.println();
         Serial.println("GAMEPLAY MODE");
         Serial.println();
       }
-      else if (cmd == "Y" && awaitingCalibration) {
+      else if (cmd == "Y" && curMode == TEST && curStage == VISUALIZATION) {
         if(topLeft.stableState == HIGH &&
           topRight.stableState == HIGH &&
           center.stableState == HIGH &&
           bottomLeft.stableState == HIGH &&
           bottomRight.stableState == HIGH) {
 
-          calibrationActive = true;
-          awaitingCalibration = false;
+          curStage = CALIBRATION;
           startCalibration();
         } else {
           Serial.println("Release all panels before starting calibration.");
         }
       }
-      else if (cmd == "Y" && awaitingGameplay) {
-        awaitingGameplay = false;
+      else if (cmd == "Y" && curStage == RESULTS) {
         curMode = GAMEPLAY;
+        curStage = VISUALIZATION;
         Serial.println();
         Serial.println("GAMEPLAY MODE");
         Serial.println();
