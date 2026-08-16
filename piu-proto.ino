@@ -42,33 +42,31 @@ struct Panel {
 
   // Current amount of samples collected for calibration
   int calibrationCount = 0;
-
   // This is true from when the panel is pressed to when it's released as long 
   // as calibrationCount < calibrationTgt
   bool activeTest = false;
-
   // First bounce before stable reading
   unsigned long bounceStart = 0;
   // Latest bounce
   unsigned long lastBounce = 0;
-
   // Number of state changes before stable
   int tempChanges = 0;
   // Current max quiet period between temporary state changes
   unsigned long tempQuiet = 0;
-
+  // Other test measurments per press or release
   Stats pressStats;
   Stats releaseStats;
 
   Panel(String n, int p, char k) : name(n), pin(p), key(k) {}
 };
 
-
-Panel topLeft = {"TOP LEFT", 2, 'w'};
-Panel center = {"CENTER", 3, 's'};
-Panel topRight = {"TOP RIGHT", 4, 'd'};
-Panel bottomLeft = {"BOTTOM LEFT", 5, 'a'};
-Panel bottomRight = {"BOTTOM RIGHT", 6, 'x'};
+Panel panels[] = {
+  {"TOP LEFT", 2, 'w'},
+  {"CENTER", 3, 's'},
+  {"TOP RIGHT", 4, 'd'},
+  {"BOTTOM LEFT", 5, 'a'},
+  {"BOTTOM RIGHT", 6, 'x'}
+};
 
 
 // ==========================================
@@ -76,25 +74,20 @@ Panel bottomRight = {"BOTTOM RIGHT", 6, 'x'};
 // ==========================================
 
 void setup() {
-  pinMode(topLeft.pin, INPUT_PULLUP);
-  pinMode(center.pin, INPUT_PULLUP);
-  pinMode(topRight.pin, INPUT_PULLUP);
-  pinMode(bottomLeft.pin, INPUT_PULLUP);
-  pinMode(bottomRight.pin, INPUT_PULLUP);
+  for (Panel &panel : panels) {
+    pinMode(panel.pin, INPUT_PULLUP);
+  }
 
   Serial.begin(115200);
   Keyboard.begin();
 }
 
 void loop() {
-
   readSerialInput();
 
-  handlePanel(topLeft);
-  handlePanel(center);
-  handlePanel(topRight);
-  handlePanel(bottomLeft);
-  handlePanel(bottomRight);
+  for (Panel &panel : panels) {
+    handlePanel(panel);
+  }
 }
 
 
@@ -117,8 +110,7 @@ void handlePanel (Panel &panel) {
         panel.bounceStart = curTime;
         panel.tempChanges = 0;
         panel.tempQuiet = 0;
-      }
-      else {
+      } else {
         // Measure quiet period between current state change and last state change.
         unsigned long quietTime = curTime - panel.lastBounce;
         // If it's larger than our current max quiet period, update.
@@ -151,7 +143,7 @@ void handlePanel (Panel &panel) {
       // Handle state change for testing (visualization or calibration)
       if (curMode == TEST) {
         if (curStage == VISUALIZATION) {
-          visualizePanels();
+          visualizePad();
         } 
         else if (curStage == CALIBRATION && panel.calibrationCount < calibrationTgt) {
           // Reading is now stable, so test can be ended and results recorded
@@ -174,8 +166,7 @@ void handlePanel (Panel &panel) {
       if (panel.stableState == LOW) {
         // Looked like a release, stayed at a press
         panel.pressStats.rejectedChanges++;
-      }
-      else {
+      } else {
         // Looked like a press, stayed at release
         panel.releaseStats.rejectedChanges++;
       }
@@ -189,21 +180,32 @@ void handlePanel (Panel &panel) {
 // Test Mode Functions
 // ==========================================
 
-void visualizePanels() {
+void visualizePad() {
   Serial.println();
   Serial.println();
-  displayPad("RED", "LEFT", topLeft);
+
+  //Top left
+  displayPanel(panels[0]);
   Serial.print("          ");
-  displayPad("RED", "RIGHT", topRight);
+  //Top right
+  displayPanel(panels[2]);
+
   Serial.println();
   Serial.println();
   Serial.print("       ");
-  displayPad("YELLOW", "CENTER", center);
+
+  // Center
+  displayPanel(panels[1]);
+
   Serial.println();
   Serial.println();
-  displayPad("BLUE", "LEFT", bottomLeft);
+
+  // Bottom Left
+  displayPanel(panels[3]);
   Serial.print("          ");
-  displayPad("BLUE", "RIGHT", bottomRight);
+  // Bottom Right
+  displayPanel(panels[4]);
+
   Serial.println();
   Serial.println();
   Serial.print("Hit pad to visualize key presses, ");
@@ -211,12 +213,10 @@ void visualizePanels() {
   Serial.println();
 }
 
-void displayPad(String color, String position, Panel &panel) {
+void displayPanel(Panel &panel) {
   Serial.print("[");
   if (panel.stableState == LOW) {
-    Serial.print(color);
-    Serial.print(": ");
-    Serial.print(position);
+    Serial.print(panel.name);
   }
   Serial.print("] ");
 }
@@ -227,88 +227,57 @@ void startCalibration() {
   Serial.println("Hit each pad " + String(calibrationTgt) + " times.");
   Serial.println();
 
-  resetPanel(topLeft);
-  resetPanel(center);
-  resetPanel(topRight);
-  resetPanel(bottomLeft);
-  resetPanel(bottomRight);
+  // Reset the test measurments of each panel
+  for (Panel &panel : panels) {
+    panel.calibrationCount = 0; 
+    panel.activeTest = false;
+
+    panel.bounceStart = 0;
+    panel.lastBounce = 0;
+    panel.tempChanges = 0;
+    panel.tempQuiet = 0;
+
+    panel.pressStats = Stats();
+    panel.releaseStats = Stats();
+  }
 
   showCalibration();
 }
 
-void resetPanel(Panel &panel) {
-  panel.calibrationCount = 0; 
-  panel.activeTest = false;
-
-  panel.bounceStart = 0;
-  panel.lastBounce = 0;
-  panel.tempChanges = 0;
-  panel.tempQuiet = 0;
-
-  panel.pressStats = Stats();
-  panel.releaseStats = Stats();
-}
-
-// TODO: Fix this later
 void recordCalibration(Panel &panel) {
   panel.calibrationCount++;
   showCalibration();
-}
-
-void showCalibration() {
-  Serial.print("Top Left: ");
-  Serial.print(topLeft.calibrationCount);
-  Serial.print("/");
-  Serial.println(calibrationTgt);
-  
-  Serial.print("Top Right: ");
-  Serial.print(topRight.calibrationCount);
-  Serial.print("/");
-  Serial.println(calibrationTgt);
-  
-  Serial.print("Center: ");
-  Serial.print(center.calibrationCount);
-  Serial.print("/");
-  Serial.println(calibrationTgt);
-
-  Serial.print("Bottom Left: ");
-  Serial.print(bottomLeft.calibrationCount);
-  Serial.print("/");
-  Serial.println(calibrationTgt);
-
-  Serial.print("Bottom Right: ");
-  Serial.print(bottomRight.calibrationCount);
-  Serial.print("/");
-  Serial.println(calibrationTgt);
-
   Serial.println();
 }
 
-void checkCalibration() {
-    if (topLeft.calibrationCount == calibrationTgt &&
-    topRight.calibrationCount == calibrationTgt &&
-    center.calibrationCount == calibrationTgt &&
-    bottomLeft.calibrationCount == calibrationTgt &&
-    bottomRight.calibrationCount == calibrationTgt) {
-
-    curStage = RESULTS;
-
-    Serial.println();
-    Serial.println("Calibration presses complete.");
-    Serial.println();
-
-    Serial.println("TOP LEFT:");
-    showResults(topLeft);
-    Serial.println("TOP RIGHT:");
-    showResults(topRight);
-    Serial.println("CENTER:");
-    showResults(center);
-    Serial.println("BOTTOM LEFT:");
-    showResults(bottomLeft);
-    Serial.println("BOTTOM RIGHT:");
-    showResults(bottomRight);
-    Serial.print("Continue to Gameplay Mode? (y)");
+void showCalibration() {
+  for (Panel &panel : panels) {
+    Serial.print(panel.name + ": ");
+    Serial.print(panel.calibrationCount);
+    Serial.print("/");
+    Serial.println(calibrationTgt);
   }
+}
+
+void checkCalibration() {
+  for (Panel &panel : panels) {
+    if (panel.calibrationCount < calibrationTgt) {
+      return;
+    }
+  }
+
+  curStage = RESULTS;
+  Serial.println();
+  Serial.println("Calibration presses complete.");
+  Serial.println();
+  // Show results for each panel
+  for (Panel &panel : panels) {
+    Serial.println(panel.name + ": ");
+    showResults(panel);    
+  }
+
+  Serial.println();
+  Serial.print("Continue to Gameplay Mode? (y)");
 }
 
 void recordBounce(Panel &panel) {
@@ -324,8 +293,7 @@ void recordBounce(Panel &panel) {
     if (panel.tempQuiet > panel.pressStats.longestSilence) {
       panel.pressStats.longestSilence = panel.tempQuiet;
     }
-  }
-  else {
+  } else {
     panel.releaseStats.bounceSum += bounceDuration;
     if (bounceDuration > panel.releaseStats.longestBounce) {
       panel.releaseStats.longestBounce = bounceDuration;
@@ -419,7 +387,7 @@ void readSerialInput() {
         Serial.println();
         Serial.println("TEST MODE");
         Serial.println();
-        visualizePanels();
+        visualizePad();
       }
       else if (cmd == "MODE GAME") {
         curMode = GAMEPLAY;
@@ -429,12 +397,16 @@ void readSerialInput() {
         Serial.println();
       }
       else if (cmd == "Y" && curMode == TEST && curStage == VISUALIZATION) {
-        if(topLeft.stableState == HIGH &&
-          topRight.stableState == HIGH &&
-          center.stableState == HIGH &&
-          bottomLeft.stableState == HIGH &&
-          bottomRight.stableState == HIGH) {
+        bool released = true;
 
+        for (Panel &panel : panels) {
+          if (panel.stableState == LOW) {
+            released = false;
+            break;
+          }
+        }
+
+        if (released) {
           curStage = CALIBRATION;
           startCalibration();
         } else {
