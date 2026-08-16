@@ -98,6 +98,12 @@ void loop() {
 void handlePanel (Panel &panel) {
   int curReading = digitalRead(panel.pin);
 
+  handleRawChange(panel, curReading);
+  handleStableReading(panel, curReading);
+}
+
+
+void handleRawChange(Panel &panel, int curReading) {
   // If the current raw reading is different from the previous raw reading
   if (curReading != panel.prevReading) {
 
@@ -124,7 +130,10 @@ void handlePanel (Panel &panel) {
     panel.debounceTimer = millis();
     panel.prevReading = curReading;
   }
+}
 
+
+void handleStableReading(Panel &panel, int curReading) {
   // If the current raw reading has been stable for longer than the debounce delay
   if (millis() - panel.debounceTimer >= debounceDelay) {
 
@@ -134,46 +143,58 @@ void handlePanel (Panel &panel) {
       panel.stableState = curReading;
       // Handle state change for gameplay (keyboard press)
       if (curMode == GAMEPLAY) {
-        if (panel.stableState == LOW) {
-          Keyboard.press(panel.key);
-        } else {
-          Keyboard.release(panel.key);
-        }
+        handleGame(panel);
       }
       // Handle state change for testing (visualization or calibration)
       if (curMode == TEST) {
-        if (curStage == VISUALIZATION) {
-          visualizePad();
-        } 
-        else if (curStage == CALIBRATION && panel.calibrationCount < calibrationTgt) {
-          // Reading is now stable, so test can be ended and results recorded
-          if (panel.activeTest) {
-            recordBounce(panel);
-            panel.activeTest = false;
-          }
-          // On release, increment and check to see if calibration should be ended
-          if (panel.stableState == HIGH) {
-            recordCalibration(panel);
-            checkCalibration();
-          }
-        }
+        handleTest(panel);
       }
     }
-
     // If the current stable state is the same as the previous stable state
     else if (panel.activeTest) {
-      panel.activeTest = false;
-      if (panel.stableState == LOW) {
-        // Looked like a release, stayed at a press
-        panel.pressStats.rejectedChanges++;
-      } else {
-        // Looked like a press, stayed at release
-        panel.releaseStats.rejectedChanges++;
-      }
+      handleReject(panel);
     }
   }
 }
 
+
+void handleGame(Panel &panel) {
+  if (panel.stableState == LOW) {
+    Keyboard.press(panel.key);
+  } else {
+    Keyboard.release(panel.key);
+  }
+}
+
+void handleTest(Panel &panel) {
+  if (curStage == VISUALIZATION) {
+          visualizePad();
+  } 
+  else if (curStage == CALIBRATION && panel.calibrationCount < calibrationTgt) {
+    // Reading is now stable, so test can be ended and results recorded
+    if (panel.activeTest) {
+      recordBounce(panel);
+      panel.activeTest = false;
+    }
+    // On release, increment panel's calibration count and check to see 
+    // if calibration should be ended
+    if (panel.stableState == HIGH) {
+      recordCalibration(panel);
+      checkCalibration();
+    }
+  }
+}
+
+void handleReject(Panel &panel) {
+  panel.activeTest = false;
+  if (panel.stableState == LOW) {
+    // Looked like a release, stayed at a press
+    panel.pressStats.rejectedChanges++;
+  } else {
+    // Looked like a press, stayed at release
+    panel.releaseStats.rejectedChanges++;
+  }
+}
 
 
 // ==========================================
