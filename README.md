@@ -1,6 +1,6 @@
 # Custom Dance Pad Controller (Pump it Up)
 
-A custom five-panel dance pad controller built with homemade sensors, cardboard, and an Arduino Leonardo. Made for Pump it Up style dance rhythm games.
+A custom five-panel dance pad controller built with homemade sensors, cardboard, and an Arduino Leonardo with gameplay and diagnostics software. Made for Pump it Up style dance rhythm games.
 
 The project converts physical panel presses into a keyboard input while handling unreliable electrical behavior from the homemade contact sensors. It also includes a diagnostic mode for visualizing inputs, measuring contact bounce, and evaluating debounce performance.
 
