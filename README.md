@@ -18,7 +18,7 @@ The project converts physical panel presses into a keyboard input while handling
     - Rejected false presses
     - Rejected false releases
 
-# Why I built it
+# Why I Built It
 
 Homemade dance pad contacts don't produce a clean signal. A single press rapidly alternates between HIGH and LOW before settling. Without a debounce delay, one press could register as multiple and affect gameplay quality.
 
