@@ -1,29 +1,25 @@
 #include <Keyboard.h>
 
 
-
-// ==========================================
-// Global Variables
-// ==========================================
-
-enum Mode {
-  GAMEPLAY,
-  TEST
-};
-
-// Gameplay is default mode
-Mode curMode = GAMEPLAY;
-
 String cmd = "";
+
+enum Mode {GAMEPLAY, TEST};
+// Default mode
+Mode curMode = GAMEPLAY;
 
 // Amount of time needed for reading to be accepted as stable
 const unsigned long debounceDelay = 20;
 
+// Test stages: Either visualization, calibration, or results
+// When true, visualization stage
 bool awaitingCalibration = false;
-bool awaitingGameplay = false;
+// When true, calibration stage
 bool calibrationActive = false;
-int calibrationTgt = 10;
+// When true, results stage. Automatically triggered when calibration is finished.
+bool awaitingGameplay = false;
 
+// Amount of samples needed per panel for calibration
+int calibrationTgt = 10;
 
 
 // ==========================================
@@ -33,45 +29,56 @@ int calibrationTgt = 10;
 struct Panel {
   int pin;
   char key;
+
+  // Current accepted state (LOW/HIGH)
   int stableState;
+  // Previous raw electrical reading
   int prevReading;
+  // Measuring time for debounce delay
   unsigned long debounceTimer;
 
+  // Current amount of samples collected for calibration
   int calibrationCount;
 
+  // This is true from when the panel is pressed to when it's released as long 
+  // as calibrationCount < calibrationTgt
   bool activeTest;
-  bool finishedTest;
 
-  // Raw bounce measurment
+  // First bounce before stable reading
   unsigned long bounceStart;
+  // Latest bounce
   unsigned long lastBounce;
 
   // Press bounce stats
   unsigned long pressTotal;
   unsigned long pressMax;
   int tempPressChanges;
+  int pressGlitches;
 
   // Release bounce stats
   unsigned long releaseTotal;
   unsigned long releaseMax;
   int tempReleaseChanges;
-
-  int tempChanges;
-
-  unsigned long tempQuiet;
-  unsigned long pressQuiet;
   unsigned long releaseQuiet;
-
-  int pressGlitches;
   int releaseGlitches;
+  unsigned long pressQuiet;
+
+  // Number of state changes before stable
+  int tempChanges;
+  // Current max quiet period between temporary state changes
+  unsigned long tempQuiet;
 };
 
-Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-Panel center = {3, 's', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, false, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
+Panel topLeft = {2, 'w', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0, 
+  0, 0, 0, 0, 0, 0};
+Panel center = {3, 's', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0, 
+  0, 0, 0, 0, 0, 0};
+Panel topRight = {4, 'd', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0};
+Panel bottomLeft = {5, 'a', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 
+  0, 0, 0, 0, 0, 0, 0};
+Panel bottomRight = {6, 'x', HIGH, HIGH, 0, 0, false, 0, 0 , 0, 0, 0, 0, 0, 
+  0, 0, 0, 0, 0, 0, 0};
 
 
 // ==========================================
@@ -101,7 +108,6 @@ void loop() {
 }
 
 
-
 // ==========================================
 // Panel Input Handling
 // ==========================================
@@ -109,11 +115,13 @@ void loop() {
 void handlePanel (Panel &panel) {
   int curReading = digitalRead(panel.pin);
 
-  // If the current raw electrical reading is different from the previous raw reading
+  // If the current raw reading is different from the previous raw reading
   if (curReading != panel.prevReading) {
 
-    if (calibrationActive) {
+    if (calibrationActive && panel.calibrationCount < calibrationTgt) {
+      // Record time to asign to either first or last bounce
       unsigned long curTime = micros();
+      // If test is not yet active, this is the first bounce.
       if (!panel.activeTest) {
         panel.activeTest = true;
         panel.bounceStart = curTime;
@@ -121,12 +129,13 @@ void handlePanel (Panel &panel) {
         panel.tempQuiet = 0;
       }
       else {
+        // Measure quiet period between current state change and last state change.
         unsigned long quietTime = curTime - panel.lastBounce;
+        // If it's larger than our current max quiet period, update.
         if (quietTime > panel.tempQuiet) {
           panel.tempQuiet = quietTime;
         }
       }
-      // Record number of bounces
       panel.lastBounce = curTime;
       panel.tempChanges++;
     }
@@ -137,10 +146,11 @@ void handlePanel (Panel &panel) {
   // If the current raw reading has been stable for longer than the debounce delay
   if (millis() - panel.debounceTimer >= debounceDelay) {
 
-    // Check if the current stable state is different from the last stable state
+    // If the current stable state is different from the last stable state
     if (curReading != panel.stableState) {
+      // Current reading is accepted as stable state change
       panel.stableState = curReading;
-
+      // Handle state change for gameplay (keyboard press)
       if (curMode == GAMEPLAY) {
         if (panel.stableState == LOW) {
           Keyboard.press(panel.key);
@@ -148,27 +158,28 @@ void handlePanel (Panel &panel) {
           Keyboard.release(panel.key);
         }
       }
-
+      // Handle state change for testing (visualization or calibration)
       if (curMode == TEST) {
         if (awaitingCalibration) {
           visualizePanels();
         } 
-        else if (calibrationActive) {
+        else if (calibrationActive && panel.calibrationCount < calibrationTgt) {
+          // Reading is now stable, so test can be ended and results recorded
           if (panel.activeTest) {
             recordBounce(panel);
             panel.activeTest = false;
           }
-          if (panel.stableState == LOW) {
+          // On release, increment and check to see if calibration should be ended
+          if (panel.stableState == HIGH) {
             recordCalibration(panel);
-          }
-          else if (panel.stableState == HIGH) {
             checkCalibration();
           }
         }
       }
     }
+
+    // If the current stable state is the same as the previous stable state
     else if (panel.activeTest) {
-      // Raw glitch returned to original stable state
       panel.activeTest = false;
       if (panel.stableState == LOW) {
         // Looked like a release, stayed at a press
@@ -238,7 +249,6 @@ void startCalibration() {
 void resetPanel(Panel &panel) {
   panel.calibrationCount = 0; 
   panel.activeTest = false;
-  panel.finishedTest = false;
 
   panel.bounceStart = 0;
   panel.lastBounce = 0;
@@ -262,10 +272,6 @@ void resetPanel(Panel &panel) {
 
 // TODO: Fix this later
 void recordCalibration(Panel &panel) {
-  if (panel.calibrationCount == calibrationTgt) {
-    return;
-  }
-
   panel.calibrationCount++;
   showCalibration();
 }
@@ -300,11 +306,11 @@ void showCalibration() {
 }
 
 void checkCalibration() {
-    if (topLeft.finishedTest &&
-    topRight.finishedTest &&
-    center.finishedTest &&
-    bottomLeft.finishedTest &&
-    bottomRight.finishedTest) {
+    if (topLeft.calibrationCount == calibrationTgt &&
+    topRight.calibrationCount == calibrationTgt &&
+    center.calibrationCount == calibrationTgt &&
+    bottomLeft.calibrationCount == calibrationTgt &&
+    bottomRight.calibrationCount == calibrationTgt) {
 
     calibrationActive = false;
     awaitingGameplay = true;
@@ -332,9 +338,6 @@ void recordBounce(Panel &panel) {
   unsigned long bounceDuration = panel.lastBounce - panel.bounceStart;
 
   if (panel.stableState == LOW) {
-    if (panel.calibrationCount == calibrationTgt) {
-      return;
-    }
     panel.pressTotal += bounceDuration;
     if (bounceDuration > panel.pressMax) {
       panel.pressMax = bounceDuration;
@@ -345,16 +348,10 @@ void recordBounce(Panel &panel) {
     }
   }
   else {
-    if (panel.finishedTest) {
-      return;
-    }
     panel.releaseTotal += bounceDuration;
     if (bounceDuration > panel.releaseMax) {
       panel.releaseMax = bounceDuration;
     }
-    if (panel.calibrationCount == calibrationTgt) {
-      panel.finishedTest = true;
-    } 
     panel.tempReleaseChanges += panel.tempChanges;
     if (panel.tempQuiet > panel.releaseQuiet) {
       panel.releaseQuiet = panel.tempQuiet;
